@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0B1C2C">
+<title>Waypoint — Travel Timeline Visualizer</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0B1C2C;
+    --ink-deep:#071320;
+    --parchment:#E8E2D0;
+    --parchment-dim:#c9c2ab;
+    --brass:#C08A3E;
+    --coral:#FF6B4A;
+    --teal:#3B6E71;
+    --glass:rgba(11,28,44,0.72);
+    --glass-border:rgba(232,226,208,0.14);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{
+    margin:0;padding:0;height:100%;overflow:hidden;
+    background:var(--ink-deep);
+    font-family:'Inter',sans-serif;
+    color:var(--parchment);
+  }
+  #map{position:absolute;inset:0;background:var(--ink-deep);}
+  .leaflet-control-attribution{
+    background:rgba(7,19,32,0.6) !important;color:var(--parchment-dim) !important;font-size:9px !important;
+  }
+  .leaflet-control-attribution a{color:var(--brass) !important;}
+
+  /* ---- Header ---- */
+  header{
+    position:absolute;top:0;left:0;right:0;z-index:1000;
+    padding:calc(env(safe-area-inset-top) + 14px) 18px 12px 18px;
+    display:flex;align-items:center;justify-content:space-between;
+    background:linear-gradient(to bottom, rgba(7,19,32,0.85) 0%, rgba(7,19,32,0) 100%);
+    pointer-events:none;
+  }
+  header *{pointer-events:auto;}
+  .brand{display:flex;align-items:baseline;gap:8px;}
+  .brand-mark{
+    font-family:'Fraunces',serif;font-weight:700;font-size:20px;letter-spacing:0.01em;color:var(--parchment);
+  }
+  .brand-sub{
+    font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:0.14em;text-transform:uppercase;color:var(--brass);
+  }
+  .icon-btn{
+    width:38px;height:38px;border-radius:10px;
+    background:var(--glass);border:1px solid var(--glass-border);
+    display:flex;align-items:center;justify-content:center;
+    color:var(--parchment);cursor:pointer;
+  }
+
+  /* ---- Upload state ---- */
+  #uploadScreen{
+    position:absolute;inset:0;z-index:900;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:32px;text-align:center;
+    background:
+      radial-gradient(ellipse at 30% 20%, rgba(59,110,113,0.35), transparent 55%),
+      radial-gradient(ellipse at 80% 85%, rgba(192,138,62,0.25), transparent 50%),
+      var(--ink-deep);
+  }
+  .compass{
+    width:76px;height:76px;margin-bottom:22px;opacity:0.9;
+  }
+  #uploadScreen h1{
+    font-family:'Fraunces',serif;font-weight:600;font-size:30px;line-height:1.15;margin:0 0 10px 0;
+    max-width:320px;
+  }
+  #uploadScreen h1 em{color:var(--coral);font-style:normal;}
+  #uploadScreen p{
+    font-size:14px;line-height:1.55;color:var(--parchment-dim);max-width:300px;margin:0 0 28px 0;
+  }
+  .upload-btn{
+    font-family:'Inter',sans-serif;font-weight:600;font-size:15px;
+    background:var(--coral);color:var(--ink-deep);
+    border:none;border-radius:14px;padding:15px 30px;
+    cursor:pointer;letter-spacing:0.01em;
+    box-shadow:0 8px 24px rgba(255,107,74,0.28);
+  }
+  .upload-btn:active{transform:scale(0.97);}
+  .hint-row{
+    margin-top:18px;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--brass);
+    letter-spacing:0.04em;cursor:pointer;text-decoration:underline;text-underline-offset:3px;
+  }
+  #howto{
+    display:none;margin-top:18px;max-width:320px;text-align:left;
+    background:var(--glass);border:1px solid var(--glass-border);border-radius:14px;padding:16px 18px;
+  }
+  #howto.show{display:block;}
+  #howto ol{margin:0;padding-left:18px;font-size:12.5px;line-height:1.7;color:var(--parchment-dim);}
+  #howto strong{color:var(--parchment);}
+  #fileInput{display:none;}
+  .privacy-note{
+    margin-top:22px;font-size:10.5px;color:var(--parchment-dim);opacity:0.7;max-width:280px;line-height:1.5;
+  }
+
+  /* ---- Loading ---- */
+  #loadingScreen{
+    position:absolute;inset:0;z-index:950;display:none;
+    align-items:center;justify-content:center;flex-direction:column;
+    background:var(--ink-deep);
+  }
+  #loadingScreen.show{display:flex;}
+  .spinner{
+    width:34px;height:34px;border-radius:50%;
+    border:2.5px solid rgba(232,226,208,0.15);border-top-color:var(--coral);
+    animation:spin 0.9s linear infinite;margin-bottom:16px;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+  #loadingScreen span{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--parchment-dim);letter-spacing:0.05em;}
+
+  /* ---- Bottom panel ---- */
+  #panel{
+    position:absolute;left:0;right:0;bottom:0;z-index:1000;
+    padding:14px 16px calc(env(safe-area-inset-bottom) + 14px) 16px;
+    background:linear-gradient(to top, rgba(7,19,32,0.95) 30%, rgba(7,19,32,0.75) 80%, transparent 100%);
+    display:none;
+  }
+  #panel.show{display:block;}
+
+  .range-row{
+    display:flex;align-items:center;gap:8px;margin-bottom:12px;
+  }
+  select{
+    -webkit-appearance:none;appearance:none;
+    background:var(--glass);border:1px solid var(--glass-border);border-radius:9px;
+    color:var(--parchment);font-family:'JetBrains Mono',monospace;font-size:11px;
+    padding:7px 9px;flex:1;min-width:0;
+  }
+  .arrow{color:var(--brass);font-size:12px;}
+
+  .stat-row{
+    display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;
+  }
+  #currentDate{
+    font-family:'Fraunces',serif;font-weight:600;font-size:17px;color:var(--parchment);
+  }
+  #pointCount{
+    font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--brass);letter-spacing:0.04em;
+  }
+
+  #scrubber{
+    -webkit-appearance:none;appearance:none;width:100%;height:26px;background:transparent;margin:0 0 12px 0;
+  }
+  #scrubber::-webkit-slider-runnable-track{
+    height:3px;background:linear-gradient(to right, var(--coral) var(--fill,0%), rgba(232,226,208,0.2) 0);
+    border-radius:2px;
+  }
+  #scrubber::-webkit-slider-thumb{
+    -webkit-appearance:none;appearance:none;
+    width:15px;height:15px;border-radius:50%;background:var(--coral);
+    margin-top:-6px;box-shadow:0 0 0 4px rgba(255,107,74,0.2);
+  }
+
+  .transport-row{
+    display:flex;align-items:center;justify-content:center;gap:18px;
+  }
+  .transport-btn{
+    background:none;border:none;color:var(--parchment);cursor:pointer;
+    display:flex;align-items:center;justify-content:center;padding:6px;
+  }
+  #playBtn{
+    width:54px;height:54px;border-radius:50%;background:var(--coral);color:var(--ink-deep);
+  }
+  #playBtn:active{transform:scale(0.95);}
+  .speed-btn{
+    font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--brass);
+    background:var(--glass);border:1px solid var(--glass-border);border-radius:8px;
+    padding:6px 10px;cursor:pointer;
+  }
+  .speed-btn.active{background:var(--brass);color:var(--ink-deep);}
+
+  .record-tip{
+    display:flex;align-items:center;gap:8px;margin-top:12px;
+    font-size:10.5px;color:var(--parchment-dim);
+    border-top:1px solid var(--glass-border);padding-top:10px;
+  }
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--coral);flex-shrink:0;}
+
+  #errorToast{
+    position:absolute;bottom:24px;left:16px;right:16px;z-index:1100;
+    background:var(--coral);color:var(--ink-deep);border-radius:10px;padding:12px 16px;
+    font-size:12.5px;font-weight:500;display:none;
+  }
+  #errorToast.show{display:block;}
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<header>
+  <div class="brand">
+    <span class="brand-mark">Waypoint</span>
+    <span class="brand-sub">Timeline</span>
+  </div>
+  <div class="icon-btn" id="reloadBtn" title="Load a different file" style="display:none;">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4v6h6M20 20v-6h-6"/><path d="M4 10a8 8 0 0113.66-4.66M20 14a8 8 0 01-13.66 4.66"/></svg>
+  </div>
+</header>
+
+<div id="uploadScreen">
+  <svg class="compass" viewBox="0 0 100 100" fill="none">
+    <circle cx="50" cy="50" r="42" stroke="#C08A3E" stroke-width="1.4" opacity="0.6"/>
+    <circle cx="50" cy="50" r="3" fill="#FF6B4A"/>
+    <path d="M50 10 L58 46 L50 50 L42 46 Z" fill="#FF6B4A"/>
+    <path d="M50 90 L42 54 L50 50 L58 54 Z" fill="#E8E2D0" opacity="0.5"/>
+    <text x="50" y="8" fill="#C08A3E" font-size="7" text-anchor="middle" font-family="JetBrains Mono, monospace">N</text>
+  </svg>
+  <h1>Your year in travel,<br><em>drawn from memory.</em></h1>
+  <p>Load your Google Timeline export and watch your routes animate across the map — right here in Safari.</p>
+  <button class="upload-btn" id="uploadBtn">Load Timeline.json</button>
+  <input type="file" id="fileInput" accept="application/json,.json">
+  <div class="hint-row" id="howtoToggle">Don't have your export yet?</div>
+  <div id="howto">
+    <ol>
+      <li>On iPhone: <strong>Google Maps → profile picture → Settings → Personal content → Export Timeline data</strong></li>
+      <li>Save the file — it downloads as <strong>Timeline.json</strong></li>
+      <li>Come back here and tap <strong>Load Timeline.json</strong>, selecting it from Files</li>
+    </ol>
+  </div>
+  <div class="privacy-note">Everything happens on your phone. Your file is never uploaded anywhere.</div>
+</div>
+
+<div id="loadingScreen">
+  <div class="spinner"></div>
+  <span id="loadingText">READING TIMELINE…</span>
+</div>
+
+<div id="errorToast"></div>
+
+<div id="panel">
+  <div class="range-row">
+    <select id="startSelect"></select>
+    <span class="arrow">→</span>
+    <select id="endSelect"></select>
+  </div>
+
+  <div class="stat-row">
+    <span id="currentDate">—</span>
+    <span id="pointCount">0 PTS</span>
+  </div>
+
+  <input type="range" id="scrubber" min="0" max="100" value="0">
+
+  <div class="transport-row">
+    <button class="speed-btn" data-speed="1" id="speed1">1×</button>
+    <button class="transport-btn" id="restartBtn">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/></svg>
+    </button>
+    <button class="transport-btn" id="playBtn">
+      <svg id="playIcon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21"/></svg>
+      <svg id="pauseIcon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="display:none;"><rect x="5" y="3" width="5" height="18"/><rect x="14" y="3" width="5" height="18"/></svg>
+    </button>
+    <button class="speed-btn" data-speed="3" id="speed3">3×</button>
+  </div>
+
+  <div class="record-tip">
+    <div class="dot"></div>
+    <span>To save this as a video: open <strong style="color:var(--parchment)">Control Center → Screen Recording</strong>, then hit play above.</span>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  // ---------- Map setup ----------
+  var map = L.map('map', {zoomControl:false, attributionControl:true}).setView([20,0], 2);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution:'© OpenStreetMap contributors © CARTO',
+    subdomains:'abcd', maxZoom:19
+  }).addTo(map);
+
+  var trailLayer = L.layerGroup().addTo(map);
+  var markerIcon = L.divIcon({
+    className:'', html:'<div style="width:14px;height:14px;border-radius:50%;background:#FF6B4A;box-shadow:0 0 0 6px rgba(255,107,74,0.25),0 0 14px rgba(255,107,74,0.8);"></div>',
+    iconSize:[14,14], iconAnchor:[7,7]
+  });
+  var marker = null;
+
+  // ---------- State ----------
+  var allPoints = [];      // {lat,lng,time(Date)}
+  var monthKeys = [];      // sorted list of 'YYYY-MM'
+  var activePoints = [];   // points within selected range
+  var playing = false;
+  var speed = 1;
+  var frameIdx = 0;
+  var rafId = null;
+  var lastTick = 0;
+
+  // ---------- DOM ----------
+  var uploadScreen = document.getElementById('uploadScreen');
+  var loadingScreen = document.getElementById('loadingScreen');
+  var panel = document.getElementById('panel');
+  var reloadBtn = document.getElementById('reloadBtn');
+  var fileInput = document.getElementById('fileInput');
+  var uploadBtn = document.getElementById('uploadBtn');
+  var howtoToggle = document.getElementById('howtoToggle');
+  var howto = document.getElementById('howto');
+  var errorToast = document.getElementById('errorToast');
+  var startSelect = document.getElementById('startSelect');
+  var endSelect = document.getElementById('endSelect');
+  var scrubber = document.getElementById('scrubber');
+  var currentDateEl = document.getElementById('currentDate');
+  var pointCountEl = document.getElementById('pointCount');
+  var playBtn = document.getElementById('playBtn');
+  var playIcon = document.getElementById('playIcon');
+  var pauseIcon = document.getElementById('pauseIcon');
+  var restartBtn = document.getElementById('restartBtn');
+  var speed1 = document.getElementById('speed1');
+  var speed3 = document.getElementById('speed3');
+
+  uploadBtn.addEventListener('click', function(){ fileInput.click(); });
+  reloadBtn.addEventListener('click', function(){ fileInput.click(); });
+  howtoToggle.addEventListener('click', function(){ howto.classList.toggle('show'); });
+  fileInput.addEventListener('change', handleFile);
+
+  function showError(msg){
+    errorToast.textContent = msg;
+    errorToast.classList.add('show');
+    setTimeout(function(){ errorToast.classList.remove('show'); }, 4200);
+  }
+
+  // ---------- File handling ----------
+  function handleFile(e){
+    var file = e.target.files[0];
+    if(!file) return;
+    loadingScreen.classList.add('show');
+    uploadScreen.style.display = 'none';
+    var reader = new FileReader();
+    reader.onload = function(ev){
+      try{
+        var json = JSON.parse(ev.target.result);
+        var pts = parseTimeline(json);
+        if(pts.length < 2){
+          throw new Error('empty');
+        }
+        allPoints = pts;
+        onParsed();
+      }catch(err){
+        loadingScreen.classList.remove('show');
+        uploadScreen.style.display = 'flex';
+        showError('Couldn\'t read that file. Make sure it\'s the Timeline.json export from Google Maps.');
+      }
+    };
+    reader.onerror = function(){
+      loadingScreen.classList.remove('show');
+      uploadScreen.style.display = 'flex';
+      showError('Couldn\'t open that file.');
+    };
+    reader.readAsText(file);
+  }
+
+  // ---------- Parsing (handles several Google Timeline export shapes) ----------
+  function coordFrom(val){
+    if(val == null) return null;
+    if(typeof val === 'string'){
+      var s = val.replace('geo:','').trim();
+      var parts = s.split(',');
+      if(parts.length >= 2){
+        var lat = parseFloat(parts[0]), lng = parseFloat(parts[1]);
+        if(isFinite(lat) && isFinite(lng)) return [lat,lng];
+      }
+      return null;
+    }
+    if(typeof val === 'object'){
+      if(val.latE7 != null && val.lngE7 != null) return [val.latE7/1e7, val.lngE7/1e7];
+      if(val.latitudeE7 != null && val.longitudeE7 != null) return [val.latitudeE7/1e7, val.longitudeE7/1e7];
+      if(val.latitude != null && val.longitude != null) return [val.latitude, val.longitude];
+      if(val.lat != null && val.lng != null) return [val.lat, val.lng];
+      if(val.latLng) return coordFrom(val.latLng);
+      if(val.point) return coordFrom(val.point);
+      if(val.placeLocation && val.placeLocation.latLng) return coordFrom(val.placeLocation.latLng);
+    }
+    return null;
+  }
+
+  function pushPoint(list, coordVal, timeVal){
+    var c = coordFrom(coordVal);
+    if(!c) return;
+    var t = timeVal ? new Date(timeVal) : null;
+    if(!t || isNaN(t.getTime())) return;
+    list.push({lat:c[0], lng:c[1], time:t});
+  }
+
+  function parseTimeline(json){
+    var pts = [];
+
+    // Shape 1: Records.json style { locations: [...] }
+    if(Array.isArray(json.locations)){
+      json.locations.forEach(function(loc){
+        var coord = loc.latitudeE7 != null ? {latitudeE7:loc.latitudeE7, longitudeE7:loc.longitudeE7} : loc;
+        pushPoint(pts, coord, loc.timestamp || loc.timestampMs);
+      });
+    }
+
+    // Shape 2: modern { semanticSegments: [...] }
+    if(Array.isArray(json.semanticSegments)){
+      json.semanticSegments.forEach(function(seg){
+        if(Array.isArray(seg.timelinePath)){
+          seg.timelinePath.forEach(function(p){
+            pushPoint(pts, p.point || p, p.time);
+          });
+        }
+        if(seg.visit && seg.visit.topCandidate){
+          pushPoint(pts, seg.visit.topCandidate.placeLocation, seg.startTime);
+        }
+        if(seg.activity){
+          pushPoint(pts, seg.activity.start, seg.startTime);
+          pushPoint(pts, seg.activity.end, seg.endTime);
+        }
+      });
+    }
+
+    // Shape 3: legacy { timelineObjects: [...] }
+    if(Array.isArray(json.timelineObjects)){
+      json.timelineObjects.forEach(function(obj){
+        if(obj.activitySegment){
+          var as = obj.activitySegment;
+          pushPoint(pts, as.startLocation, as.duration && as.duration.startTimestamp);
+          if(Array.isArray(as.waypointPath && as.waypointPath.waypoints)){
+            as.waypointPath.waypoints.forEach(function(w){
+              pushPoint(pts, w, as.duration && as.duration.startTimestamp);
+            });
+          }
+          pushPoint(pts, as.endLocation, as.duration && as.duration.endTimestamp);
+        }
+        if(obj.placeVisit){
+          var pv = obj.placeVisit;
+          pushPoint(pts, pv.location, pv.duration && pv.duration.startTimestamp);
+        }
+      });
+    }
+
+    // Shape 4: raw top-level array
+    if(Array.isArray(json)){
+      json.forEach(function(seg){
+        if(Array.isArray(seg.timelinePath)){
+          seg.timelinePath.forEach(function(p){ pushPoint(pts, p.point || p, p.time); });
+        }
+        if(seg.visit && seg.visit.topCandidate) pushPoint(pts, seg.visit.topCandidate.placeLocation, seg.startTime);
+        if(seg.activity){
+          pushPoint(pts, seg.activity.start, seg.startTime);
+          pushPoint(pts, seg.activity.end, seg.endTime);
+        }
+      });
+    }
+
+    pts.sort(function(a,b){ return a.time - b.time; });
+    // de-dupe & thin extremely dense point clouds a bit for smoother playback
+    var out = [];
+    var lastLat=null, lastLng=null;
+    pts.forEach(function(p){
+      if(lastLat===null || Math.abs(p.lat-lastLat) > 0.0008 || Math.abs(p.lng-lastLng) > 0.0008){
+        out.push(p); lastLat=p.lat; lastLng=p.lng;
+      }
+    });
+    return out;
+  }
+
+  // ---------- After parse ----------
+  function monthKey(d){ return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); }
+  function monthLabel(key){
+    var parts = key.split('-');
+    var d = new Date(parseInt(parts[0]), parseInt(parts[1])-1, 1);
+    return d.toLocaleDateString('en-US', {month:'short', year:'numeric'});
+  }
+
+  function onParsed(){
+    var keysSet = {};
+    allPoints.forEach(function(p){ keysSet[monthKey(p.time)] = true; });
+    monthKeys = Object.keys(keysSet).sort();
+
+    startSelect.innerHTML = '';
+    endSelect.innerHTML = '';
+    monthKeys.forEach(function(k){
+      var o1 = document.createElement('option'); o1.value=k; o1.textContent=monthLabel(k);
+      var o2 = document.createElement('option'); o2.value=k; o2.textContent=monthLabel(k);
+      startSelect.appendChild(o1); endSelect.appendChild(o2);
+    });
+    // default: last full month range = last 3 months of data, or all if short
+    var defaultStartIdx = Math.max(0, monthKeys.length - 3);
+    startSelect.selectedIndex = defaultStartIdx;
+    endSelect.selectedIndex = monthKeys.length - 1;
+
+    loadingScreen.classList.remove('show');
+    panel.classList.add('show');
+    reloadBtn.style.display = 'flex';
+    applyRange();
+  }
+
+  startSelect.addEventListener('change', applyRange);
+  endSelect.addEventListener('change', applyRange);
+
+  function applyRange(){
+    pause();
+    var startKey = startSelect.value, endKey = endSelect.value;
+    if(startKey > endKey){ endSelect.value = startKey; endKey = startKey; }
+    activePoints = allPoints.filter(function(p){
+      var k = monthKey(p.time);
+      return k >= startKey && k <= endKey;
+    });
+    if(activePoints.length < 2){
+      showError('No route data in that range — try widening it.');
+      activePoints = allPoints.slice();
+    }
+    scrubber.max = String(activePoints.length - 1);
+    frameIdx = 0;
+    scrubber.value = '0';
+    pointCountEl.textContent = activePoints.length + ' PTS';
+
+    trailLayer.clearLayers();
+    if(marker){ map.removeLayer(marker); marker = null; }
+    if(activePoints.length){
+      var bounds = L.latLngBounds(activePoints.map(function(p){ return [p.lat,p.lng]; }));
+      map.fitBounds(bounds, {padding:[40,40]});
+      marker = L.marker([activePoints[0].lat, activePoints[0].lng], {icon:markerIcon}).addTo(map);
+      currentDateEl.textContent = activePoints[0].time.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+    }
+  }
+
+  // ---------- Playback ----------
+  scrubber.addEventListener('input', function(){
+    pause();
+    frameIdx = parseInt(scrubber.value, 10);
+    renderFrame(frameIdx);
+  });
+
+  function renderFrame(idx){
+    if(!activePoints.length) return;
+    idx = Math.max(0, Math.min(idx, activePoints.length-1));
+    var pct = activePoints.length>1 ? (idx/(activePoints.length-1))*100 : 0;
+    scrubber.style.setProperty('--fill', pct+'%');
+    scrubber.value = String(idx);
+
+    var p = activePoints[idx];
+    marker.setLatLng([p.lat, p.lng]);
+    currentDateEl.textContent = p.time.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+    map.panTo([p.lat, p.lng], {animate:true, duration:0.3, easeLinearity:0.5});
+
+    // redraw trail: full path dim, recent path bright (fading effect)
+    trailLayer.clearLayers();
+    var full = activePoints.slice(0, idx+1).map(function(pt){ return [pt.lat,pt.lng]; });
+    if(full.length>1){
+      L.polyline(full, {color:'#3B6E71', weight:2, opacity:0.35}).addTo(trailLayer);
+      var recentStart = Math.max(0, full.length-40);
+      L.polyline(full.slice(recentStart), {color:'#FF6B4A', weight:3, opacity:0.85}).addTo(trailLayer);
+    }
+  }
+
+  function play(){
+    if(playing || activePoints.length<2) return;
+    playing = true;
+    playIcon.style.display='none'; pauseIcon.style.display='block';
+    lastTick = performance.now();
+    step();
+  }
+  function pause(){
+    playing = false;
+    playIcon.style.display='block'; pauseIcon.style.display='none';
+    if(rafId) cancelAnimationFrame(rafId);
+  }
+  function step(now){
+    if(!playing) return;
+    now = now || performance.now();
+    var msPerFrame = 90 / speed;
+    if(now - lastTick >= msPerFrame){
+      lastTick = now;
+      frameIdx++;
+      if(frameIdx >= activePoints.length){
+        frameIdx = activePoints.length-1;
+        renderFrame(frameIdx);
+        pause();
+        return;
+      }
+      renderFrame(frameIdx);
+    }
+    rafId = requestAnimationFrame(step);
+  }
+
+  playBtn.addEventListener('click', function(){ playing ? pause() : play(); });
+  restartBtn.addEventListener('click', function(){
+    pause(); frameIdx=0; renderFrame(0);
+  });
+  speed1.addEventListener('click', function(){ speed=1; speed1.classList.add('active'); speed3.classList.remove('active'); });
+  speed3.addEventListener('click', function(){ speed=3; speed3.classList.add('active'); speed1.classList.remove('active'); });
+  speed1.classList.add('active');
+
+})();
+</script>
+</body>
+</html>
